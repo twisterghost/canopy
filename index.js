@@ -9,7 +9,9 @@ const mkdirp = require('mkdirp');
 const { spawnSync } = require('child_process');
 const toSlug = require('slugg');
 const marked = require('marked');
-const List = require('prompt-list');
+const inquirer = require('inquirer');
+const fuzzy = require('fuzzy');
+inquirer.registerPrompt('autocomplete', require('inquirer-autocomplete-prompt'));
 const TerminalRenderer = require('marked-terminal');
 marked.setOptions({
   renderer: new TerminalRenderer(),
@@ -62,6 +64,23 @@ function displayFile(slug) {
   console.log(marked(fullData));
 }
 
+function getArticlePromptOptions() {
+  return _.map(config.files, entry => ({name: entry.title, value: entry.slug}));
+}
+
+function getFuzzyArticlePromptOptions(partial) {
+  const input = partial || '';
+  const list = getArticlePromptOptions();
+
+  const options = {
+    extract: el => el.name
+  };
+
+  return _.map(fuzzy.filter(input, list, options), 'original');
+}
+
+getFuzzyArticlePromptOptions('the');
+
 program
   .command('new <title>')
   .action(async function(title) {
@@ -84,12 +103,13 @@ program
     if (title) {
       displayFile(toSlug(title));
     } else {
-      const list = new List({
+      const answers = await inquirer.prompt([{
+        type: 'autocomplete',
         name: 'article',
-        message: 'Please choose an article',
-        choices: _.map(config.files, entry => entry.title)
-      });
-      const chosen = await list.run();
+        message: 'Choose an article',
+        source: (answersSoFar, input) => Promise.resolve(getFuzzyArticlePromptOptions(input)),
+      }]);
+      const chosen = answers.article;
       displayFile(toSlug(chosen));
     }
   });
