@@ -52,6 +52,14 @@ async function editSync(filename, content = '') {
   return newContent;
 }
 
+function getFileBySlug(slug) {
+  if (!config.files.hasOwnProperty(slug)) {
+    return undefined;
+  }
+
+  return config.files[slug];
+}
+
 function displayFile(slug) {
   if (!config.files.hasOwnProperty(slug)) {
     console.log('Article not found.');
@@ -79,6 +87,23 @@ function getFuzzyArticlePromptOptions(partial) {
   return _.map(fuzzy.filter(input, list, options), 'original');
 }
 
+async function pickArticle() {
+  const answers = await inquirer.prompt([{
+    type: 'autocomplete',
+    name: 'article',
+    message: 'Choose an article',
+    source: (answersSoFar, input) => Promise.resolve(getFuzzyArticlePromptOptions(input)),
+  }]);
+  return answers.article;
+}
+
+function deleteArticle(slug) {
+  const file = getFileBySlug(slug);
+  fs.unlinkSync(path.join(config.dir, file.filename));
+  delete config.files[slug];
+  jsonfile.writeFileSync(configFile, config);
+}
+
 getFuzzyArticlePromptOptions('the');
 
 program
@@ -103,14 +128,25 @@ program
     if (title) {
       displayFile(toSlug(title));
     } else {
-      const answers = await inquirer.prompt([{
-        type: 'autocomplete',
-        name: 'article',
-        message: 'Choose an article',
-        source: (answersSoFar, input) => Promise.resolve(getFuzzyArticlePromptOptions(input)),
-      }]);
-      const chosen = answers.article;
-      displayFile(toSlug(chosen));
+      displayFile(await pickArticle());
+    }
+  });
+
+program
+  .command('del [title]')
+  .action(async function(title) {
+    if (title) {
+      const slug = toSlug(title);
+      if (config.files[slug]) {
+        deleteArticle(slug);
+        console.log(`Deleted article "${title}"`);
+      } else {
+        console.log(`No such article "${title}"`);
+      }
+    } else {
+      const slug = await pickArticle();
+      deleteArticle(slug);
+      console.log('Deleted article.');
     }
   });
 
