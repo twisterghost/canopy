@@ -39,16 +39,14 @@ const config = jsonfile.readFileSync(configFile);
 mkdirp.sync(config.dir);
 
 async function editSync(filename, content = '') {
-  fs.writeFileSync(filename, content, 'utf8');
+  const filepath = path.join(config.dir, filename);
 
   const editor = process.env.EDITOR || 'vim';
-  const child = spawnSync(editor, [filename], {
+  const child = spawnSync(editor, [filepath], {
     stdio: 'inherit',
   });
 
-  const newContent = fs.readFileSync(filename, 'utf8');
-  fs.writeFileSync(path.join(config.dir, filename), newContent, 'utf8');
-  fs.unlinkSync(filename);
+  const newContent = fs.readFileSync(filepath, 'utf8');
   return newContent;
 }
 
@@ -104,7 +102,19 @@ function deleteArticle(slug) {
   jsonfile.writeFileSync(configFile, config);
 }
 
-getFuzzyArticlePromptOptions('the');
+async function getOrPromptForArticle(title) {
+  if (title) {
+    const slug = toSlug(title);
+    if (config.files[slug]) {
+      return slug;
+    } else {
+      console.error(`No such article "${title}"`);
+      process.exit(1);
+    }
+  } else {
+    return pickArticle();
+  }
+}
 
 program
   .command('new <title>')
@@ -125,29 +135,22 @@ program
 program
   .command('read [title]')
   .action(async function(title) {
-    if (title) {
-      displayFile(toSlug(title));
-    } else {
-      displayFile(await pickArticle());
-    }
+    displayFile(await getOrPromptForArticle(title));
+  });
+
+program
+  .command('edit [title]')
+  .action(async function(title) {
+    const slug = await getOrPromptForArticle(title);
+    const filename = config.files[slug].filename;
+    editSync(filename);
   });
 
 program
   .command('del [title]')
   .action(async function(title) {
-    if (title) {
-      const slug = toSlug(title);
-      if (config.files[slug]) {
-        deleteArticle(slug);
-        console.log(`Deleted article "${title}"`);
-      } else {
-        console.log(`No such article "${title}"`);
-      }
-    } else {
-      const slug = await pickArticle();
-      deleteArticle(slug);
-      console.log('Deleted article.');
-    }
+    deleteArticle(await getOrPromptForArticle(title));
+    console.log('Deleted article.');
   });
 
 
