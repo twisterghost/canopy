@@ -30,13 +30,17 @@ if (!fs.existsSync(configFile) && process.argv[1] !== 'init') {
     wikiName: 'Wiki',
     dir: defaultDir,
     files: {},
-    tags: [],
+    tags: {},
   });
 }
 
 // Load in the config
 const config = jsonfile.readFileSync(configFile);
 mkdirp.sync(config.dir);
+
+function save() {
+  jsonfile.writeFileSync(configFile, config);
+}
 
 async function editSync(filename, content = '') {
   const filepath = path.join(config.dir, filename);
@@ -85,6 +89,21 @@ function getFuzzyArticlePromptOptions(partial) {
   return _.map(fuzzy.filter(input, list, options), 'original');
 }
 
+function getTagPromptOptions() {
+  return Object.keys(config.tags);
+}
+
+function getFuzzyTagPromptOptions(partial) {
+  const input = partial || '';
+  const list = getTagPromptOptions();
+
+  const options = {
+    extract: el => toSlug(el),
+  }
+
+  return _.map(fuzzy.filter(input, list, options), 'original');
+}
+
 async function pickArticle() {
   const answers = await inquirer.prompt([{
     type: 'autocomplete',
@@ -93,6 +112,17 @@ async function pickArticle() {
     source: (answersSoFar, input) => Promise.resolve(getFuzzyArticlePromptOptions(input)),
   }]);
   return answers.article;
+}
+
+async function pickTag() {
+  const answers = await inquirer.prompt([{
+    type: 'autocomplete',
+    name: 'tag',
+    message: 'Choose a tag',
+    source: (answersSoFar, input) => Promise.resolve(getFuzzyTagPromptOptions(input)),
+    suggestOnly: true,
+  }]);
+  return toSlug(answers.tag);
 }
 
 function deleteArticle(slug) {
@@ -107,13 +137,51 @@ async function getOrPromptForArticle(title) {
     const slug = toSlug(title);
     if (config.files[slug]) {
       return slug;
-    } else {
-      console.error(`No such article "${title}"`);
-      process.exit(1);
     }
-  } else {
-    return pickArticle();
+
+    console.error(`No such article "${title}"`);
+    process.exit(1);
   }
+
+  return pickArticle();
+}
+
+async function getOrPromptForTag(tagName) {
+  if (tagName) {
+    return toSlug(tagName);
+  }
+
+  return pickTag();
+}
+
+function tagArticle(articleSlug, tagSlug) {
+  if (!config.files[articleSlug]) {
+    console.error('Article does not exist.');
+    process.exit(1);
+  }
+
+  if (tagSlug.length === 0) {
+    console.error('Invalid tag name.');
+    process.exit(1);
+  }
+
+  // Create the tag if it doesnt exist
+  if (!config.tags[tagSlug]) {
+    config.tags[tagSlug] = [];
+  }
+
+  if (!config.tags[tagSlug].includes(articleSlug)) {
+    config.tags[tagSlug] = config.tags[tagSlug].concat(articleSlug);
+  }
+
+  // Add the tag on the article if its not there
+  const fileData = config.files[articleSlug];
+  if (!fileData.tags) {
+    fileData.tags = [tagSlug];
+  } else {
+    fileData.tags = fileData.tags.concat(tagSlug);
+  }
+  save();
 }
 
 program
@@ -151,6 +219,15 @@ program
   .action(async function(title) {
     deleteArticle(await getOrPromptForArticle(title));
     console.log('Deleted article.');
+  });
+
+program
+  .command('tag [title] [tagName]')
+  .action(async function(title, tagName) {
+    const article = await getOrPromptForArticle(title);
+    const tag = await getOrPromptForTag(tagName);
+    console.log('Chosen tag: ' + tag);
+    tagArticle(article, tag);
   });
 
 
