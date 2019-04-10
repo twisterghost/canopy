@@ -74,13 +74,16 @@ function displayFile(slug) {
   console.log(marked(fullData));
 }
 
-function getArticlePromptOptions() {
+function getArticlePromptOptions(tag = '') {
+  if (tag.length > 0) {
+    return _.map(_.filter(config.files, file => file.tags.includes(tag)), entry => ({name: entry.title, value: entry.slug}));
+  }
   return _.map(config.files, entry => ({name: entry.title, value: entry.slug}));
 }
 
-function getFuzzyArticlePromptOptions(partial) {
-  const input = partial || '';
-  const list = getArticlePromptOptions();
+function getFuzzyArticlePromptOptions(partial = '', tag = '') {
+  const input = partial;
+  const list = getArticlePromptOptions(tag);
 
   const options = {
     extract: el => el.name
@@ -104,23 +107,23 @@ function getFuzzyTagPromptOptions(partial) {
   return _.map(fuzzy.filter(input, list, options), 'original');
 }
 
-async function pickArticle() {
+async function pickArticle(tag = '') {
   const answers = await inquirer.prompt([{
     type: 'autocomplete',
     name: 'article',
     message: 'Choose an article',
-    source: (answersSoFar, input) => Promise.resolve(getFuzzyArticlePromptOptions(input)),
+    source: (answersSoFar, input) => Promise.resolve(getFuzzyArticlePromptOptions(input, tag)),
   }]);
   return answers.article;
 }
 
-async function pickTag() {
+async function pickTag(suggestOnly = true) {
   const answers = await inquirer.prompt([{
     type: 'autocomplete',
     name: 'tag',
     message: 'Choose a tag',
     source: (answersSoFar, input) => Promise.resolve(getFuzzyTagPromptOptions(input)),
-    suggestOnly: true,
+    suggestOnly,
   }]);
   return toSlug(answers.tag);
 }
@@ -132,7 +135,7 @@ function deleteArticle(slug) {
   jsonfile.writeFileSync(configFile, config);
 }
 
-async function getOrPromptForArticle(title) {
+async function getOrPromptForArticle(title, tag = '') {
   if (title) {
     const slug = toSlug(title);
     if (config.files[slug]) {
@@ -143,15 +146,15 @@ async function getOrPromptForArticle(title) {
     process.exit(1);
   }
 
-  return pickArticle();
+  return pickArticle(tag);
 }
 
-async function getOrPromptForTag(tagName) {
+async function getOrPromptForTag(tagName, suggestOnly = true) {
   if (tagName) {
     return toSlug(tagName);
   }
 
-  return pickTag();
+  return pickTag(suggestOnly);
 }
 
 function tagArticle(articleSlug, tagSlug) {
@@ -194,6 +197,7 @@ program
       title,
       slug,
       filename: `${slug}.md`,
+      tags: [],
     };
     config.files[slug] = metadata;
     jsonfile.writeFileSync(configFile, config);
@@ -228,6 +232,18 @@ program
     const tag = await getOrPromptForTag(tagName);
     console.log('Chosen tag: ' + tag);
     tagArticle(article, tag);
+  });
+
+program
+  .command('browse [tagName]')
+  .action(async function(tagName) {
+    const tag = await getOrPromptForTag(tagName, false);
+    console.log(`Browsing entries of tag "${tag}"...`);
+    try {
+      displayFile(await getOrPromptForArticle(undefined, tag));
+    } catch (e) {
+      console.error(e);
+    }
   });
 
 
