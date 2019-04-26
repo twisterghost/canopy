@@ -187,6 +187,10 @@ function tagArticle(articleSlug, tagSlug) {
   save();
 }
 
+async function defaultAction() {
+  displayFile(await getOrPromptForArticle(''));
+}
+
 program
   .command('new <title>')
   .action(async function(title) {
@@ -246,5 +250,8 @@ program
     }
   });
 
-
 program.parse(process.argv);
+
+if (program.args.length === 0) {
+  defaultAction();
+};
